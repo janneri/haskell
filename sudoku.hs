@@ -118,6 +118,7 @@ place gs cellpos newval = snd $ unzip $ map setVal $ zip [0..] gs
 play :: GameState -> GameState
 play gs | isSolutionState gs = gs
 play gs | isDeadEnd gs = gs
+play gs | 0 == length (getPositionsOfFreeCells gs) = gs
 play gs = do
     let (movecount, cellpos, moves) = getFirstFreeCellWithLeastMoves gs
     let newstates = map (place gs cellpos) moves    
@@ -125,7 +126,7 @@ play gs = do
     let endstates = map (play) newstates
     let solutionstates = filter isSolutionState endstates     
     -- will return the deadend state ff solutionstate is not found
-    if [] == solutionstates then head endstates else head solutionstates
+    if [] == solutionstates then easy1 else head solutionstates
 
 -- best first search, which stops searching when solution is found 
 playWithEagerStop :: [GameState] -> [GameState]
@@ -141,14 +142,15 @@ playWithEagerStop (gs:rest) | isSolutionState gs = [gs]
 
 
 -- does not work with hard1, because it leads to too many different states
-playBreadthFirst :: [GameState] -> [GameState]
-playBreadthFirst [] = []
-playBreadthFirst gstates | all (isDeadEnd) gstates = []
-playBreadthFirst gstates | any (isSolutionState) gstates = filter (isSolutionState) gstates
-playBreadthFirst gstates = playBreadthFirst 
+playBreadthFirst :: Int -> [GameState] -> [GameState]
+playBreadthFirst limit gstates | limit == 0 = gstates
+--playBreadthFirst _ [] = []
+playBreadthFirst _ gstates | any (isSolutionState) gstates = filter (isSolutionState) gstates
+playBreadthFirst _ gstates | all (isDeadEnd) gstates = []
+playBreadthFirst limit gstates = playBreadthFirst (limit - 1)  
                              $ nub 
                                $ concat
-                                 $ map moveToNewStates gstates
+                                 $ map moveToNewStates
                                    $ filterOutDeadEnds gstates
     where filterOutDeadEnds gstates = filter (\state -> not (isDeadEnd state))  gstates                                    
 
@@ -169,15 +171,9 @@ testDepthFirstWithEasy = showGs $ play easy1
 testDepthFirstWithHard = showGs $ play hard1
 
 -- test breadth first    
-testBreadthFirstEasy = showGs $ head $ playBreadthFirst [easy1]
-testBreadthFirstHard = showGs $ head $ playBreadthFirst [hard1]
+testBreadthFirstEasy = showGs $ head $ playBreadthFirst 25 [easy1]
+testBreadthFirstHard = showGs $ head $ playBreadthFirst 10 [hard1]
 
 -- test best first which stops when solution is found
 testEagerStopWithEasy = showGs $ head $ playWithEagerStop [easy1]
 testEagerStopWithHard = showGs $ head $ playWithEagerStop [hard1]
-
--- use this to see the amount of states after limit-moves in breadth-first-search
-getNewStatesUntil :: Int -> [GameState] -> [GameState]
-getNewStatesUntil limit gstates | limit == 0 = gstates
-                                | otherwise = recurse
-    where recurse = getNewStatesUntil (limit-1) (nub $ concat $ map moveToNewStates gstates) 
