@@ -2,8 +2,8 @@
 
 import Data.List
 
-type Cell = Int
-type GameState = [Cell]
+type Value = Int
+type GameState = [Value]
 type CellPos = Int -- position is just an index of the flat gamestate table
 type Rownum = Int
 type Colnum = Int
@@ -43,7 +43,7 @@ showGs gs = putStrLn $ showRows [0,1,2] ++ "\n" ++
     where showRows = foldl (\str rownum -> str ++ showRow gs rownum ++ "\n") ""          
                
 showRow :: GameState -> Rownum -> String
-showRow gs rownum = foldl step "" $ zip [0..] $ cellsOfRow rownum gs
+showRow gs rownum = foldl step "" $ zip [0..] $ valsOfRow rownum gs
     where step str (pos, value) | pos == 0 = show value
                                 | pos `mod` 3 == 0 = str ++ "   " ++ show value
                                 | otherwise = str ++ " " ++ show value
@@ -54,74 +54,130 @@ rowOfCell pos = pos `div` sudokusize
 colOfCell :: CellPos -> Colnum
 colOfCell pos = pos - sudokusize * rowOfCell pos
 
-cellsOfRow :: Rownum -> GameState -> [Cell]
-cellsOfRow rownum = take sudokusize . drop (rownum*sudokusize)
+valsOfRow :: Rownum -> GameState -> [Value]
+valsOfRow rownum = take sudokusize . drop (rownum*sudokusize)
 
-cellsOfCol :: Colnum -> GameState -> [Cell]
-cellsOfCol colnum = snd . unzip . filter (colmatch) . zip [0..]
+valsOfCol :: Colnum -> GameState -> [Value]
+valsOfCol colnum = snd . unzip . filter (colmatch) . zip [0..]
     where colmatch (idx,cell) = colnum == (colOfCell idx)
 
 -- upperleft corner of 3x3 area in 9x9 table
 cornerOf3x3Area :: CellPos -> (Rownum, Colnum)
 cornerOf3x3Area cellpos = (rowOfCell cellpos `div` 3 * 3, colOfCell cellpos `div` 3 * 3)
 
-take3 :: GameState -> (Rownum, Colnum) -> [Cell]
+take3 :: GameState -> (Rownum, Colnum) -> [Value]
 take3 gs (row, col) = take 3 $ drop (col + row*sudokusize) gs
 
-cellsOf3x3Area :: CellPos -> GameState -> [Cell]
+cellsOf3x3Area :: CellPos -> GameState -> [Value]
 cellsOf3x3Area cellpos gs = (take3 gs corner) ++ 
                             (take3 gs $ addRow 1 corner) ++ 
                             (take3 gs $ addRow 2 corner)
     where corner = cornerOf3x3Area cellpos
           addRow n (row, col) = (row+n, col)          
           
-getValidCells :: GameState -> CellPos -> [Cell]
+getValidCells :: GameState -> CellPos -> [Value]
 getValidCells gs pos | gs !! pos > 0 = []
                      | otherwise = [1..9] \\ (row ++ column ++ area)
-    where row = cellsOfRow (rowOfCell pos) gs
-          column = cellsOfCol (colOfCell pos) gs
+    where row = valsOfRow (rowOfCell pos) gs
+          column = valsOfCol (colOfCell pos) gs
           area = cellsOf3x3Area pos gs
           
 getValidCellCount :: GameState -> CellPos -> Int        
 getValidCellCount gs pos = length $ getValidCells gs pos
 
-isEndState :: GameState -> Bool
-isEndState gs = all ( 0< ) gs
+isSolutionState :: GameState -> Bool
+isSolutionState gs = all ( 0< ) gs
 
-getFreeCells :: GameState -> [(CellPos, Cell)]
-getFreeCells =  filter (\(pos, val) -> val == 0) . zip [0..]
+getPositionsOfFreeCells :: GameState -> [CellPos]
+getPositionsOfFreeCells =  map (fst) . filter (\(pos, val) -> val == 0) . zip [0..]
 
 isDeadEnd :: GameState -> Bool
-isDeadEnd gs = test $ getFreeCells gs
+isDeadEnd gs = test $ getPositionsOfFreeCells gs
     where test [] = True
-          test ((pos, val) : rest) | 0 < getValidCellCount gs pos = False
-                                   | otherwise = test rest
+          test (position : rest) | 0 < getValidCellCount gs position = False
+                                 | otherwise = test rest
                     
-getFirstFreeCellWithLeastOptions :: GameState -> CellPos
-getFirstFreeCellWithLeastOptions gs = fst $ snd $ head
-                                        $ sort $ filter (\(count, (pos, val)) -> count > 0)                                          
-                                          $ map (\(pos, val) -> (getValidCellCount gs pos, (pos, val))) 
-                                            $ getFreeCells gs
+getFirstFreeCellWithLeastMoves :: GameState -> (Int, CellPos, [Value])
+getFirstFreeCellWithLeastMoves gs = head
+                                      $ sort 
+                                        -- add valuecount, to sort to get the one with least options
+                                        $ map (\(pos, vals) -> (length vals, pos, vals)) 
+                                          $ getMoves gs
 
-place :: GameState -> CellPos -> Cell -> GameState                                              
+getMoves :: GameState -> [(CellPos, [Value])]
+getMoves gs = map (\pos -> (pos, getValidCells gs pos)) 
+                  $ getPositionsOfFreeCells gs
+
+place :: GameState -> CellPos -> Value -> GameState                                              
 place gs cellpos newval = snd $ unzip $ map setVal $ zip [0..] gs
     where setVal (pos, val) | pos == cellpos = (pos, newval)
                             | otherwise = (pos, val)    
                             
+
+-- best first search, which does not stop when solution is found 
 play :: GameState -> GameState
-play gs | isEndState gs = gs
+play gs | isSolutionState gs = gs
 play gs | isDeadEnd gs = gs
 play gs = do
-    let cellpos = getFirstFreeCellWithLeastOptions gs
-    let options = getValidCells gs cellpos
-    let newstates = map (place gs cellpos) options    
+    let (movecount, cellpos, moves) = getFirstFreeCellWithLeastMoves gs
+    let newstates = map (place gs cellpos) moves    
+    -- recurse with map means we will go through each recursion tree even if solution is found
+    let endstates = map (play) newstates
+    let solutionstates = filter isSolutionState endstates     
+    -- will return the deadend state ff solutionstate is not found
+    if [] == solutionstates then head endstates else head solutionstates
+
+-- best first search, which stops searching when solution is found 
+playWithEagerStop :: [GameState] -> [GameState]
+playWithEagerStop [] = [] 
+playWithEagerStop (gs:rest) | isSolutionState gs = [gs]
+                | isDeadEnd gs = []
+                | otherwise = do
+    let (movecount, cellpos, moves) = getFirstFreeCellWithLeastMoves gs
+    let newstates = map (place gs cellpos) moves    
     -- recurse until we find an end:
-    let endstates = map (play) newstates     
-    -- the endstates are either deadend or the actual solution states
-    if [] == filter isEndState endstates then head endstates
-        else head $ filter isEndState endstates
-    
-    
--- test it    
-test1 = showGs $ play easy1
-test2 = showGs $ play hard1
+    let solutionstates = playWithEagerStop newstates
+    if [] == solutionstates then playWithEagerStop rest else solutionstates
+
+
+-- does not work with hard1, because it leads to too many different states
+playBreadthFirst :: [GameState] -> [GameState]
+playBreadthFirst [] = []
+playBreadthFirst gstates | all (isDeadEnd) gstates = []
+playBreadthFirst gstates | any (isSolutionState) gstates = filter (isSolutionState) gstates
+playBreadthFirst gstates = playBreadthFirst 
+                             $ nub 
+                               $ concat
+                                 $ map moveToNewStates gstates
+                                   $ filterOutDeadEnds gstates
+    where filterOutDeadEnds gstates = filter (\state -> not (isDeadEnd state))  gstates                                    
+
+moveToNewStates :: GameState -> [GameState]
+moveToNewStates gs = do
+    let (movecount, cellpos, values) = getFirstFreeCellWithLeastMoves gs
+    placeMoves gs cellpos values
+
+placeMoves :: GameState -> CellPos -> [Value] -> [GameState]    
+placeMoves gs pos values = map (place gs pos) values 
+              
+          
+
+-- TESTING
+
+-- test depth first which does not stop when solution is found    
+testDepthFirstWithEasy = showGs $ play easy1
+testDepthFirstWithHard = showGs $ play hard1
+
+-- test breadth first    
+testBreadthFirstEasy = showGs $ head $ playBreadthFirst [easy1]
+testBreadthFirstHard = showGs $ head $ playBreadthFirst [hard1]
+
+-- test best first which stops when solution is found
+testEagerStopWithEasy = showGs $ head $ playWithEagerStop [easy1]
+testEagerStopWithHard = showGs $ head $ playWithEagerStop [hard1]
+
+-- use this to see the amount of states after limit-moves in breadth-first-search
+getNewStatesUntil :: Int -> [GameState] -> [GameState]
+getNewStatesUntil limit gstates | limit == 0 = gstates
+                                | otherwise = recurse
+    where recurse = getNewStatesUntil (limit-1) (nub $ concat $ map moveToNewStates gstates) 
