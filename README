@@ -3,3 +3,4 @@ small apps, basics with haskell
 - indexer will read files from a folder and create an index from those files
 - pokerhand resolves a pokerhand from 5 cards
 - sudoku solves a sudoku using DFS 
+- keilapiste calculates bowling score
