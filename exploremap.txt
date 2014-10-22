@@ -1,0 +1,76 @@
+o##
+#x#
+#x#
+
+register 'janne' = (#, R, D)
+pos (0,0)
+nodes (0,0,#), (1,0,?), (0,1,?)
+edges (0,1), (0,2)
+
+move R = (#, L, R)
+pos (1,0)
+nodes (0,0,#), (1,0,#), (0,1,?), (0,2,?)
+edges (0,1), (0,2), (pos, L pos)
+
+###
+pos (2,0)
+nodes (0,0,#), (1,0,#), (2,0,#)
+moves (0,0,D), (1,0,L), (1,0,R)
+
+
+
+
+
+
+
+
+
+###
+#x#
+#x#
+
+register 'janne' = (#, R, D)
+pos (0,0)
+nodes (0,0,#,[R,D])
+unexp (
+
+move R = (#,L,R)
+pos (1,0)
+nodes (0,0,#,[R,D]), (1,0,#,[L,R])
+
+move R = (#,L,D)
+pos (2,0)
+nodes (0,0,#,[R,D]), (1,0,#,[L,R]), (2,0,#,[L,D])
+
+move D = (#,U,D)
+pos (2,1)
+nodes (0,0,#,[R,D]), (1,0,#,[L,R]), (2,0,#,[L,D]), (2,1,#,[U,D])
+
+move D = (#,U)
+pos (2,2)
+nodes (0,0,#,[R,D]), (1,0,#,[L,R]), (2,0,#,[L,D]), (2,1,#,[U,D]), (2,2,#,[U])
+
+
+
+
+
+###
+#x#
+#x#
+
+gs <- register 'janne'
+play gs
+
+play :: gs -> gs
+play gs | isExplored gs = gs
+              | otherwise = 
+pos <- getPos gs 'janne'
+(sign, moves) <- getStatus gs 'janne' = (#, [R, D])
+currNode <- (pos, sign)
+newNodes <- map (move pos) moves
+-- lisää jos ei ole vielä graafissa
+gs <- addNodes gs currNode ++ newNodes
+gs <- addEdges gs currNode newNodes 
+-- lasketaan polun pituus nykysijainnista jokaiseen unexplored nodeen..
+targetNode <- findClosestUnexploredNode gs pos 
+
